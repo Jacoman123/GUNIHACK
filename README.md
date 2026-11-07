@@ -104,9 +104,9 @@ for: spend a little extra effort and never stall.
 
 ## Video
 
-[`video/vanta_explainer.mp4`](video/vanta_explainer.mp4) is a 2-minute explainer, silent and
-ready for a voice-over. [`video/TRANSCRIPT.md`](video/TRANSCRIPT.md) has the timed script to
-read over it. The side-by-side footage is drawn from real simulation runs (The gauntlet,
+[`video/vanta_explainer_voiceover.mp4`](video/vanta_explainer_voiceover.mp4) is the 2-minute
+explainer with voice-over. [`video/vanta_explainer.mp4`](video/vanta_explainer.mp4) is the same
+video without sound, and [`video/TRANSCRIPT.md`](video/TRANSCRIPT.md) has the timed script. The side-by-side footage is drawn from real simulation runs (The gauntlet,
 seed 1), and the results chart is read from `results/BENCHMARK.md`.
 
 To re-render it, install the two extra packages and run the generator:
