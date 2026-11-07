@@ -315,9 +315,9 @@ def scene_merge(img, d, t, dur):
 
 
 # ------------------------------------------------------- live comparison
-LIVE_SLOW_SIM = 600.0     # first 10 sim-minutes at 15x, so the faults are readable
-LIVE_SLOW_RATE = 15.0
-LIVE_FAST_RATE = 90.0
+LIVE_SLOW_SIM = 560.0     # the fault-heavy first 9 sim-minutes at 20x, so the faults are readable
+LIVE_SLOW_RATE = 20.0
+LIVE_FAST_RATE = 170.0    # then fast-forward until both swarms finish
 
 
 def live_sim_time(tl: float) -> float:
@@ -428,7 +428,7 @@ def scene_live(img, d, t, dur, live: Live):
     d.text((40, 22), "SAME MISSION · SAME FAULTS · SAME MOMENTS", font=F[(16, "bold")], fill=fade(ACCENT, a))
     sim0 = live.sims[0]
     ct = min(sim_t, max(s.t for s in live.sims))
-    rate = "15×" if sim_t <= LIVE_SLOW_SIM else "90×"
+    rate = f"{LIVE_SLOW_RATE:.0f}×" if sim_t <= LIVE_SLOW_SIM else f"{LIVE_FAST_RATE:.0f}×"
     d.text((40, 44), f"The gauntlet  ·  mission clock {fmt(ct)}  ·  {rate} speed", font=F[(26, "regular")], fill=fade(TEXT, a))
 
     # fault chips
@@ -496,126 +496,240 @@ def scene_live(img, d, t, dur, live: Live):
     d.ellipse([px - 6, ty - 6, px + 6, ty + 6], fill=TEXT)
 
 
-# ---------------------------------------------------------------- results
+# ------------------------------------------------------ benchmark numbers
 def read_benchmark():
+    """{scenario title: {strategy: {...}}}, parsed from results/BENCHMARK.md."""
+    names = {"**Vanta**": "vanta", "Central command": "central", "No coordination": "independent"}
+    num = lambda s: float(s.split()[0]) if s[:1].isdigit() else None  # noqa: E731
     rows = {}
-    order = []
     for line in (ROOT / "results" / "BENCHMARK.md").read_text(encoding="utf-8").splitlines():
-        m = re.match(r"\| (.+?) \| (\*\*Vanta\*\*|Central command) \| [^|]+ \| ([\d.]+) min \|", line)
-        if m:
-            sc, st, v = m.group(1), m.group(2), float(m.group(3))
-            if sc not in rows:
-                rows[sc] = {}
-                order.append(sc)
-            rows[sc]["vanta" if "Vanta" in st else "central"] = v
-    return [(sc, rows[sc]["vanta"], rows[sc]["central"]) for sc in order if len(rows[sc]) == 2]
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) != 8 or cells[1] not in names:
+            continue
+        done, n = (int(x) for x in cells[4].split("/"))
+        rows.setdefault(cells[0], {})[names[cells[1]]] = {
+            "searched": num(cells[2]), "complete": num(cells[3]), "done": done, "n": n, "idle": num(cells[7])}
+    return rows
 
 
 BENCH = read_benchmark()
 
 
-def scene_results(img, d, t, dur):
+def headline_numbers():
+    b = BENCH
+    base = b["Lost base station"]
+    gaunt = b["The gauntlet"]
+    return {
+        "base_v": base["vanta"]["searched"], "base_c": base["central"]["searched"],
+        "base_ratio": base["central"]["searched"] / base["vanta"]["searched"],
+        "idle_v": gaunt["vanta"]["idle"], "idle_c": gaunt["central"]["idle"],
+        "idle_ratio": gaunt["central"]["idle"] / max(gaunt["vanta"]["idle"], 1.0),
+        "done": sum(r["vanta"]["done"] for r in b.values()),
+        "runs": sum(r["vanta"]["n"] for r in b.values()),
+        "faster": sum(r["vanta"]["complete"] < r["central"]["complete"] for r in b.values()),
+        "scenarios": len(b),
+    }
+
+
+NUM = headline_numbers()
+
+
+# ----------------------------------------------------------- story scene
+def _icon(d, kind, cx, cy, a):
+    col = fade((150, 158, 175), a)
+    if kind == "valley":
+        d.polygon([(cx - 70, cy + 30), (cx - 30, cy - 35), (cx + 5, cy + 30)], outline=col, width=3)
+        d.polygon([(cx - 5, cy + 30), (cx + 35, cy - 25), (cx + 70, cy + 30)], outline=col, width=3)
+    elif kind == "forest":
+        for dx in (-45, 0, 45):
+            d.polygon([(cx + dx - 20, cy + 15), (cx + dx, cy - 35), (cx + dx + 20, cy + 15)], outline=col, width=3)
+            d.line([cx + dx, cy + 15, cx + dx, cy + 32], fill=col, width=3)
+    elif kind == "disaster":
+        d.line([cx - 25, cy + 32, cx, cy - 35], fill=col, width=3)
+        d.line([cx + 25, cy + 32, cx, cy - 35], fill=col, width=3)
+        d.line([cx - 14, cy + 2, cx + 14, cy + 2], fill=col, width=3)
+        d.line([cx + 30, cy - 30, cx + 60, cy + 20], fill=col, width=3)  # snapped section
+        d.line([cx - 70, cy + 32, cx + 70, cy + 32], fill=col, width=3)
+    elif kind == "sea":
+        for row in range(3):
+            y = cy - 20 + row * 22
+            pts = [(cx - 70 + k * 10, y + (6 if k % 2 else -6)) for k in range(15)]
+            d.line(pts, fill=col, width=3)
+
+
+def scene_story(img, d, t, dur):
     a = appear(t, 0, 0.5) * (1 - appear(t, dur - 0.4, 0.4))
-    header(d, "10 runs per scenario · median time to mission complete", "Vanta finishes first in every scenario", a)
-    x_label, x0, x1 = 80, 400, 1120
-    vmax = 30.0
-    y = 180
-    for i, (sc, v, c) in enumerate(BENCH):
-        b = appear(t, 0.5 + i * 0.25, 0.5) * a
-        grow = ease((t - 0.5 - i * 0.25) / 1.0)
-        d.text((x_label, y + 6), sc, font=F[(18, "regular")], fill=fade(TEXT, b))
-        for j, (val, col) in enumerate(((v, ACCENT), (c, (110, 116, 130)))):
-            yy = y + j * 22
-            w_ = (x1 - x0) * val / vmax * grow
-            d.rectangle([x0, yy, x0 + w_, yy + 16], fill=fade(col, b))
-            if grow > 0.95:
-                d.text((x0 + w_ + 8, yy - 2), f"{val:.1f} min", font=F[(15, "regular")], fill=fade(col, b))
-        y += 58
-    lx = x0
-    d.rectangle([lx, 600, lx + 14, 614], fill=fade(ACCENT, a))
-    d.text((lx + 22, 596), "Vanta", font=F[(16, "bold")], fill=fade(TEXT, a))
-    d.rectangle([lx + 110, 600, lx + 124, 614], fill=fade((110, 116, 130), a))
-    d.text((lx + 132, 596), "Central command", font=F[(16, "bold")], fill=fade(TEXT, a))
-    b = appear(t, 3.5, 0.6) * a
-    d.text((80, 640), "Every scenario completed on every seed. Read from results/BENCHMARK.md.",
-           font=F[(18, "regular")], fill=fade(MUTED, b))
+    header(d, "Why we built Vanta", "Drones are needed most where radio works least", a)
+    b1 = appear(t, 0.6) * a
+    d.text((80, 168), "We started out building drones to spot wildfires.", font=F[(22, "regular")], fill=fade(TEXT, b1))
+    b2 = appear(t, 2.4) * a
+    d.text((80, 202), "Every test found the same weak spot: they all needed a signal to the ground.",
+           font=F[(22, "regular")], fill=fade(MUTED, b2))
+    places = [("valley", "Mountain valleys", "ridges block the signal"),
+              ("forest", "Deep forest", "trees soak up radio"),
+              ("disaster", "Disaster zones", "phone masts are down"),
+              ("sea", "Open sea", "nothing to relay through")]
+    tw, gap = 260, 20
+    x0 = (W - 4 * tw - 3 * gap) // 2
+    for i, (kind, title, sub) in enumerate(places):
+        b = appear(t, 4.2 + i * 0.6) * a
+        x = x0 + i * (tw + gap)
+        d.rounded_rectangle([x, 262, x + tw, 492], radius=10, fill=fade(PANEL, b), outline=fade(LINE, b))
+        _icon(d, kind, x + tw // 2, 330, b)
+        ctext(d, (x + tw // 2, 404), title, F[(20, "bold")], fade(TEXT, b))
+        ctext(d, (x + tw // 2, 432), sub, F[(15, "regular")], fade(MUTED, b))
+        nb = appear(t, 6.6 + i * 0.5, 0.3) * a
+        if nb > 0:
+            lab = "NO SIGNAL"
+            lw = d.textlength(lab, font=F[(13, "bold")]) + 20
+            d.rounded_rectangle([x + (tw - lw) / 2, 452, x + (tw + lw) / 2, 478], radius=6, fill=fade((127, 29, 29), nb))
+            ctext(d, (x + tw / 2, 465), lab, F[(13, "bold")], fade((254, 202, 202), nb))
+    b3 = appear(t, 9.4) * a
+    ctext(d, (W // 2, 552), "Exactly where search drones are needed. So we started again, from one question:",
+          F[(22, "regular")], fade(TEXT, b3))
+    b4 = appear(t, 11.0) * a
+    ctext(d, (W // 2, 610), "What if no drone ever needed to be told what to do?", F[(30, "bold")], fade(ACCENT, b4))
+
+
+# ----------------------------------------------------------- impact scene
+def scene_impact(img, d, t, dur):
+    a = appear(t, 0, 0.5) * (1 - appear(t, dur - 0.4, 0.4))
+    header(d, "Why it matters", "Faster searches, lower costs", a)
+    d.text((80, 170), "SOCIAL", font=F[(16, "bold")], fill=fade(GOOD, a))
+    social = ["Survivors found sooner, in the places help struggles to reach",
+              "Keeps working when disasters knock out phone networks",
+              "Drones search ground too dangerous to send rescuers into"]
+    y = 204
+    for i, s in enumerate(social):
+        b = appear(t, 0.8 + i * 0.9) * a
+        d.ellipse([80, y + 10, 90, y + 20], fill=fade(GOOD, b))
+        y = wrap(d, 104, y, s, F[(22, "regular")], fade(TEXT, b), 430) + 22
+
+    x0 = 640
+    d.text((x0, 170), "FINANCIAL", font=F[(16, "bold")], fill=fade(ACCENT, a))
+    stats = [
+        (f"{NUM['base_ratio']:.1f}× faster", f"full search with the base station down ({NUM['base_v']:.1f} vs {NUM['base_c']:.1f} min)"),
+        (f"{NUM['idle_ratio']:.0f}× less idle", f"flight time when everything fails ({NUM['idle_v']:.0f} vs {NUM['idle_c']:.0f} drone-min)"),
+        (f"{NUM['done']}/{NUM['runs']}", "simulated missions completed, with no always-on link to pay for"),
+    ]
+    y = 204
+    for i, (big, small) in enumerate(stats):
+        b = appear(t, 4.0 + i * 1.2) * a
+        d.text((x0, y), big, font=F[(40, "bold")], fill=fade(TEXT, b))
+        wrap(d, x0, y + 52, small, F[(18, "regular")], fade(MUTED, b), 560, 4)
+        y += 120
+    b = appear(t, 8.5) * a
+    d.text((80, 640), f"Simulated: {NUM['scenarios']} failure scenarios × 10 runs each, Vanta vs central command "
+           "(results/BENCHMARK.md).", font=F[(15, "regular")], fill=fade(MUTED, b))
+
+
+# ---------------------------------------------------------- business scene
+def scene_business(img, d, t, dur):
+    a = appear(t, 0, 0.5) * (1 - appear(t, dur - 0.4, 0.4))
+    header(d, "The business", "Software that runs on drones people already own", a)
+    d.text((80, 170), "WHO PAYS", font=F[(16, "bold")], fill=fade(ACCENT, a))
+    chips = ["Search & rescue", "Wildfire agencies", "Infrastructure inspection",
+             "Mining & agriculture", "Maritime & offshore"]
+    x, y = 80, 200
+    for i, c in enumerate(chips):
+        b = appear(t, 0.6 + i * 0.35) * a
+        w_ = d.textlength(c, font=F[(20, "bold")]) + 32
+        if x + w_ > W - 80:
+            x, y = 80, y + 52
+        d.rounded_rectangle([x, y, x + w_, y + 40], radius=20, outline=fade(ACCENT, b), width=2)
+        d.text((x + 16, y + 7), c, font=F[(20, "bold")], fill=fade(TEXT, b))
+        x += w_ + 12
+
+    top = y + 70
+    d.text((80, top), "HOW IT EARNS", font=F[(16, "bold")], fill=fade(ACCENT, a))
+    cards = [("Licence per drone", "for rescue, wildfire and inspection teams running their own fleets"),
+             ("Built into drone makers' products", "an SDK licence, so “works without signal” ships as a feature"),
+             ("Blackout testing as a service", "prove a fleet copes with failures before it ever flies")]
+    cw, gap = 360, 20
+    for i, (title, sub) in enumerate(cards):
+        b = appear(t, 3.0 + i * 1.0) * a
+        cx = 80 + i * (cw + gap)
+        d.rounded_rectangle([cx, top + 30, cx + cw, top + 180], radius=10, fill=fade(PANEL, b), outline=fade(LINE, b))
+        wrap(d, cx + 20, top + 48, title, F[(20, "bold")], fade(TEXT, b), cw - 40, 4)
+        wrap(d, cx + 20, top + 100, sub, F[(18, "regular")], fade(MUTED, b), cw - 40, 4)
+    b = appear(t, 7.5) * a
+    ctext(d, (W // 2, top + 250), "No new hardware. No always-on link. Just a smarter swarm.", F[(26, "regular")], fade(ACCENT, b))
 
 
 def scene_outro(img, d, t, dur):
     a = appear(t, 0.1, 0.6)
     cx = W // 2
-    ctext(d, (cx, 300), "V A N T A", F[(64, "bold")], fade(TEXT, a))
-    ctext(d, (cx, 372), "Cut the radios. The search keeps going.", F[(28, "light")], fade(ACCENT, a))
+    ctext(d, (cx, 290), "V A N T A", F[(64, "bold")], fade(TEXT, a))
+    ctext(d, (cx, 362), "Cut the radios. The search keeps going.", F[(28, "light")], fade(ACCENT, a))
     b = appear(t, 1.2, 0.6)
-    ctext(d, (cx, 460), "github.com/Jacoman123/GUNIHACK  ·  python -m vanta serve", F[(18, "regular")], fade(MUTED, b))
+    ctext(d, (cx, 450), "Built for the Neptune North Challenge  ·  GreatUniHack 2026", F[(18, "regular")], fade(MUTED, b))
+    ctext(d, (cx, 480), "github.com/Jacoman123/GUNIHACK", F[(18, "regular")], fade(MUTED, b))
 
 
 # ------------------------------------------------------------- timeline
+# (name, start, end, draw function, length the animation was designed for)
 SCENES = [
-    ("title", 0.0, 8.0, scene_title),
-    ("problem", 8.0, 21.0, scene_problem),
-    ("notebook", 21.0, 33.0, scene_notebook),
-    ("leases", 33.0, 45.0, scene_leases),
-    ("merge", 45.0, 55.0, scene_merge),
-    ("live", 55.0, 107.0, scene_live),
-    ("results", 107.0, 116.0, scene_results),
-    ("outro", 116.0, 120.0, scene_outro),
+    ("title", 0.0, 6.0, scene_title, 8.0),
+    ("story", 6.0, 20.0, scene_story, 14.0),
+    ("problem", 20.0, 30.0, scene_problem, 13.0),
+    ("notebook", 30.0, 42.0, scene_notebook, 12.0),
+    ("leases", 42.0, 52.0, scene_leases, 12.0),
+    ("live", 52.0, 87.0, scene_live, None),
+    ("impact", 87.0, 101.0, scene_impact, 14.0),
+    ("business", 101.0, 113.0, scene_business, 12.0),
+    ("outro", 113.0, 120.0, scene_outro, 7.0),
 ]
 DURATION = SCENES[-1][2]
+
+
+def start(name):
+    return next(s[1] for s in SCENES if s[0] == name)
+
+
+def draw_frame(t: float, live: Live) -> Image.Image:
+    img = Image.new("RGB", (W, H), BG)
+    d = ImageDraw.Draw(img)
+    for name, a, b, fn, designed in SCENES:
+        if a <= t < b:
+            tl, dur = t - a, b - a
+            if name == "live":
+                fn(img, d, tl, dur, live)
+            else:
+                k = designed / dur      # play the animation faster or slower to fit its slot
+                fn(img, d, tl * k, dur * k)
+            break
+    return img
 
 
 def render(live: Live):
     writer = imageio_ffmpeg.write_frames(
         str(OUT / "vanta_explainer.mp4"), (W, H), fps=FPS, codec="libx264",
-        quality=8, macro_block_size=8, output_params=["-pix_fmt", "yuv420p", "-movflags", "+faststart"])
+        quality=8, macro_block_size=8, output_params=["-movflags", "+faststart"])
     writer.send(None)
-    n = int(DURATION * FPS)
-    for f in range(n):
-        t = f / FPS
-        img = Image.new("RGB", (W, H), BG)
-        d = ImageDraw.Draw(img)
-        for name, a, b, fn in SCENES:
-            if a <= t < b:
-                if name == "live":
-                    fn(img, d, t - a, b - a, live)
-                else:
-                    fn(img, d, t - a, b - a)
-                break
-        writer.send(img.tobytes())
+    for f in range(int(DURATION * FPS)):
+        writer.send(draw_frame(f / FPS, live).tobytes())
         if f % (FPS * 10) == 0:
-            print(f"  {t:5.0f}s / {DURATION:.0f}s")
+            print(f"  {f / FPS:5.0f}s / {DURATION:.0f}s")
     writer.close()
 
 
 def stills(live: Live, times):
     for t in times:
-        img = Image.new("RGB", (W, H), BG)
-        d = ImageDraw.Draw(img)
-        for name, a, b, fn in SCENES:
-            if a <= t < b:
-                if name == "live":
-                    fn(img, d, t - a, b - a, live)
-                else:
-                    fn(img, d, t - a, b - a)
-        img.save(OUT / f"still_{int(t):03d}.png")
+        draw_frame(t, live).save(OUT / f"still_{int(t):03d}.png")
 
 
 def live_moments():
-    """Run the comparison once to find when things happen, for the transcript."""
+    """Fly the comparison once to find when things happen, for the transcript."""
     sc = SCENARIOS["gauntlet"]
     v = Simulation(sc, "vanta", 1).run(until_reported=True)
     c = Simulation(sc, "central", 1).run(until_reported=True)
-    live_start = next(a for n, a, _, _ in SCENES if n == "live")
-    at = lambda sim_t: live_start + live_video_time(sim_t)  # noqa: E731
+    at = lambda sim_t: start("live") + live_video_time(sim_t)  # noqa: E731
+    end = next(s[2] for s in SCENES if s[0] == "live")
+    assert at(c.reported_t) < end - 1.0, "central command must finish on screen; retime the live scene"
     return {
-        "jam": (at(sc.jam[0][0]), at(sc.jam[0][1])),
-        "kill1": at(sc.kills[0][0]),
-        "base": (at(sc.base_down[0][0]), at(sc.base_down[0][1])),
-        "split": (at(sc.split[0][0]), at(sc.split[0][1])),
-        "kill2": at(sc.kills[1][0]),
-        "fast": at(LIVE_SLOW_SIM),
-        "vanta_done": (at(v.reported_t), v.reported_t),
-        "central_done": (at(c.reported_t), c.reported_t),
+        "jam": at(sc.jam[0][0]), "kill1": at(sc.kills[0][0]), "base": at(sc.base_down[0][0]),
+        "split": at(sc.split[0][0]), "fast": at(LIVE_SLOW_SIM),
+        "vanta_done": (at(v.reported_t), v.reported_t), "central_done": (at(c.reported_t), c.reported_t),
     }
 
 
@@ -623,92 +737,98 @@ def ts(sec):
     return f"{int(sec // 60)}:{int(sec % 60):02d}"
 
 
-def start(name):
-    return next(a for n, a, _, _ in SCENES if n == name)
-
-
 def transcript(mo) -> str:
     vd, vsim = mo["vanta_done"]
     cd, csim = mo["central_done"]
     gap = (csim - vsim) / 60
-    best = max(BENCH, key=lambda r: r[2] - r[1])
-    lines = [
+    gap_words = f"nearly {math.ceil(gap)}" if gap % 1 > 0.5 else f"{gap:.0f}"
+    n = NUM
+    sec = lambda name, title: f"**{ts(start(name))} · {title}**"  # noqa: E731
+    return "\n".join([
         "# Vanta explainer: voice-over transcript",
         "",
         "Length 2:00. Each section is written to fit its slot at a relaxed pace (about 150 words a minute).",
-        "Timestamps match what is on screen. Lines in *italics* are cues for you, not for reading aloud.",
+        "Headings mark scene changes. *Italic* lines are on-screen cues for you, not for reading aloud.",
         "",
         "---",
         "",
-        "**0:00 · Title**",
+        sec("title", "Title"),
         "",
-        "This is Vanta: a search-and-rescue drone swarm that keeps working towards its goal, "
-        "even when its radios fail.",
+        "This is Vanta: a drone swarm that keeps searching, even when the radios go dark.",
         "",
-        "**0:08 · The usual way**",
+        sec("story", "Why we built it"),
         "",
-        "Most drone swarms run on central command. The base tells each drone where to search, by radio. "
-        "When the link drops, drones finish their job, and wait. The search stalls.",
+        "We started out building wildfire drones, and found one weak spot: they all needed a signal. "
+        "But drones are needed most in valleys, forests and disaster zones, exactly where radio fails. "
+        "So we started again.",
         "",
-        "**0:21 · Every drone carries its own notebook**",
+        sec("problem", "The problem"),
         "",
-        "Vanta has no boss. Each drone carries its own copy of the mission: what's searched, who's where, "
-        "and where survivors are. Drones in range swap notes, and pass them on.",
+        "Today, most swarms take orders from a base. Lose the link, and drones finish their job, and wait. "
+        "The search stalls when it matters most.",
         "",
-        "**0:33 · Leases, not orders**",
+        sec("notebook", "How Vanta works"),
         "",
-        "Drones claim sectors with short leases, renewed while they work. If a drone crashes, or goes "
-        "quiet, its lease runs out, and a free drone finishes the job.",
+        "In Vanta, there's no boss. Every drone carries its own copy of the mission, and decides for itself. "
+        "Drones in range swap notes, so news spreads drone to drone.",
         "",
-        "**0:45 · Back in contact**",
+        sec("leases", "Leases, not orders"),
         "",
-        "When groups reconnect, one exchange merges everything. Every drone settles clashes the same way, "
-        "so the swarm always agrees.",
+        "Drones claim sectors with short leases. If one crashes or goes quiet, its lease runs out, "
+        "and another drone finishes its work.",
         "",
-        "**0:55 · Live comparison** *(real simulation: \"The gauntlet\", seed 1)*",
+        sec("live", "Live comparison") + " *(real simulation: \"The gauntlet\", seed 1)*",
         "",
-        "Same mission, same faults, same moments. Vanta on the left, central command on the right.",
+        "Same mission, same faults. Vanta on the left, central command on the right.",
         "",
-        f"*{ts(mo['jam'][0])}: radio blackout begins.* "
-        "Every radio is jammed. Vanta keeps sweeping. Central command's drones stop, and drift home for orders.",
+        f"*{ts(mo['jam'])}: radio blackout.* Radios jammed. Vanta keeps searching. "
+        "Central command's drones stop, and head home for orders.",
         "",
-        f"*{ts(mo['kill1'])}: first crash. {ts(mo['base'][0])}: base goes off air. {ts(mo['split'][0])}: ridge split.* "
-        "A drone goes down. The base station drops off the air. Then a ridge cuts the swarm in two. "
-        "Vanta keeps searching on both sides of the ridge.",
+        f"*{ts(mo['kill1'])}: crash, then base off air at {ts(mo['base'])}, ridge split at {ts(mo['split'])}.* "
+        "A crash. The base goes down. A ridge splits the swarm. Vanta keeps going on both sides.",
         "",
-        f"*{ts(mo['fast'])}: footage speeds up.* "
-        "Let's speed things up.",
+        f"*{ts(vd)}: Vanta completes.* Vanta finishes after {vsim / 60:.1f} minutes.",
         "",
-        f"*{ts(vd)}: Vanta completes.* "
-        f"Vanta finishes the whole search, and reports every survivor, after {vsim / 60:.1f} minutes.",
+        f"*{ts(cd)}: central command completes.* Central command, {gap_words} minutes later.",
         "",
-        f"*{ts(cd)}: central command completes.* "
-        f"Central command gets there nearly {gap:.0f} minutes later." if gap % 1 > 0.5 else
-        f"Central command gets there {gap:.0f} minutes later.",
+        sec("impact", "Why it matters"),
         "",
-        f"**{ts(start('results'))} · Results**",
+        "That matters. Survivors are found sooner, in the places help struggles to reach, with fewer "
+        "rescuers at risk. And it saves money: far less idle flight time, and no costly link to keep up.",
         "",
-        "Across seven failure scenarios, ten runs each, Vanta finished every mission, with a faster "
-        f"median time in every one. The biggest gap is when the base goes down."
-        if best[0] == "Lost base station" else
-        "Across seven failure scenarios, ten runs each, Vanta finished every mission, with a faster "
-        "median time in every one.",
+        f"*On screen: {n['base_ratio']:.1f}× faster full search with the base down; {n['idle_ratio']:.0f}× less idle "
+        f"flight time in the gauntlet; {n['done']}/{n['runs']} missions completed. All simulated.*",
         "",
-        f"**{ts(start('outro'))} · Close**",
+        sec("business", "The business"),
+        "",
+        "Vanta is software, so it runs on drones people already own. We'd license it per drone to rescue, "
+        "wildfire and inspection teams, and to drone makers.",
+        "",
+        sec("outro", "Close"),
         "",
         "Vanta. Cut the radios, and the search keeps going.",
         "",
-    ]
-    return "\n".join(lines)
+        "---",
+        "",
+        "## If a judge asks",
+        "",
+        f"* **Are the numbers real?** They're from the simulator: {n['scenarios']} failure scenarios, 10 runs each, "
+        f"Vanta against a fair central-command baseline. Vanta finished all {n['runs']} and had the faster median "
+        f"time in {n['faster']} of {n['scenarios']} scenarios. On clear skies the two are within a minute.",
+        "* **What's not modelled?** Wind, obstacles and battery limits. Real use needs hardware trials and aviation approval.",
+        "* **Why can't central command just add relays?** It can, but relays cost money and still fail. "
+        "Vanta treats losing contact as normal, so cheap short-range radios are enough.",
+        "",
+    ])
 
 
 def main():
     OUT.mkdir(exist_ok=True)
     mo = live_moments()
     (OUT / "TRANSCRIPT.md").write_text(transcript(mo), encoding="utf-8")
-    print("transcript written; key moments:", {k: v for k, v in mo.items()})
+    print("transcript written; key moments:", mo)
     if "--stills" in sys.argv:
-        stills(Live(), [4, 15, 19, 27, 31, 38, 43, 50, 54, 60, 66, 75, 90, 104, 110, 117])
+        stills(Live(), [3, 9, 18, 26, 36, 48, 58, 66, 80, 86, 95, 100, 108, 117])
         return
     render(Live())
     print("video written to", OUT / "vanta_explainer.mp4")
