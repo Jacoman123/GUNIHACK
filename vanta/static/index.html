@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vanta</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <span class="mark" aria-hidden="true"></span>
+    <div>
+      <h1>VANTA</h1>
+      <p class="tag">The search keeps going when the radios go dark.</p>
+    </div>
+  </div>
+  <div class="mission">
+    <label>Scenario <select id="scenario"></select></label>
+    <label>Versus <select id="rival"></select></label>
+    <label>Seed <input id="seed" type="number" min="1" value="1"></label>
+    <button id="restart" class="ghost">Restart</button>
+    <button id="pause" class="ghost" aria-pressed="false">Pause</button>
+    <label>Speed <select id="speed">
+      <option value="2">2×</option><option value="5">5×</option>
+      <option value="10" selected>10×</option><option value="20">20×</option><option value="40">40×</option>
+    </select></label>
+  </div>
+</header>
+
+<p id="scenario-desc" class="desc"></p>
+
+<section class="faults" aria-label="Break the radios">
+  <span class="faults-title">Break things</span>
+  <button class="fault" data-action="jam" aria-pressed="false">Jam all radios</button>
+  <button class="fault" data-action="split" aria-pressed="false">Split the swarm</button>
+  <button class="fault" data-action="base_down" aria-pressed="false">Cut the base station</button>
+  <button id="kill" class="fault danger">Crash a drone</button>
+  <label class="loss">Message loss <input id="loss" type="range" min="0" max="95" step="5" value="5"> <output id="loss-out">5%</output></label>
+  <label class="view">Map shows <select id="view"></select></label>
+</section>
+
+<main id="panels">
+  <article class="panel" data-i="0">
+    <header class="ph"><h2></h2><span class="pill"></span></header>
+    <div class="stage"><canvas></canvas></div>
+    <div class="stats"></div>
+    <div class="fleet"></div>
+    <ol class="log"></ol>
+  </article>
+  <article class="panel" data-i="1">
+    <header class="ph"><h2></h2><span class="pill"></span></header>
+    <div class="stage"><canvas></canvas></div>
+    <div class="stats"></div>
+    <div class="fleet"></div>
+    <ol class="log"></ol>
+  </article>
+</main>
+
+<footer class="legend">
+  <span><i class="sw cov"></i>Searched</span>
+  <span><i class="sw sec"></i>Sector a drone is searching</span>
+  <span><i class="sw link"></i>Radio link this second</span>
+  <span><i class="sw dz"></i>Radio shadow</span>
+  <span><i class="sw sv"></i>Survivor found</span>
+  <span><i class="sw hid"></i>Survivor not found yet</span>
+  <span><i class="sw hold"></i>Drone waiting for orders</span>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
