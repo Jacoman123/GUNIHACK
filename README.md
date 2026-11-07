@@ -2,6 +2,8 @@
 
 **A drone swarm that keeps searching when the radios go dark.**
 
+▶ **[Watch the 2-minute demo on YouTube](https://youtu.be/1iw5Mctc0ZE)**
+
 Built for the GreatUniHack 2026 **Neptune North Challenge**: *design a system where
 multiple agents keep working toward a shared goal, even when communication fails.*
 
@@ -103,6 +105,8 @@ gauntlet, against 1–3% for central command). That's the trade the challenge as
 for: spend a little extra effort and never stall.
 
 ## Video
+
+Watch it on YouTube: https://youtu.be/1iw5Mctc0ZE
 
 [`video/vanta_explainer_voiceover.mp4`](video/vanta_explainer_voiceover.mp4) is the 2-minute
 explainer with voice-over. [`video/vanta_explainer.mp4`](video/vanta_explainer.mp4) is the same
