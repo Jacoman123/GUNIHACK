@@ -102,6 +102,20 @@ contact is some double searching (7–9% of the area in the blackout and the
 gauntlet, against 1–3% for central command). That's the trade the challenge asks
 for: spend a little extra effort and never stall.
 
+## Video
+
+[`video/vanta_explainer.mp4`](video/vanta_explainer.mp4) is a 2-minute explainer, silent and
+ready for a voice-over. [`video/TRANSCRIPT.md`](video/TRANSCRIPT.md) has the timed script to
+read over it. The side-by-side footage is drawn from real simulation runs (The gauntlet,
+seed 1), and the results chart is read from `results/BENCHMARK.md`.
+
+To re-render it, install the two extra packages and run the generator:
+
+```bash
+pip install pillow imageio-ffmpeg
+python tools/make_video.py
+```
+
 ## Layout
 
 ```
@@ -115,6 +129,8 @@ vanta/
   server.py      dashboard backend (stdlib http.server)
   static/        dashboard front end (plain JS + canvas)
 tests/           merge laws, blackout, split, reconvergence, crash takeover
+tools/           make_video.py: renders the explainer video and transcript
+video/           the explainer video and its voice-over transcript
 ```
 
 ## A 60-second demo
